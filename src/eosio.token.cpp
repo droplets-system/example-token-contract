@@ -21,6 +21,83 @@ void token::create(const name& issuer, const asset& maximum_supply)
    });
 }
 
+[[eosio::on_notify("drops::logdestroy")]] void token::mint(const name                                 owner,
+                                                           const vector<dropssystem::drops::drop_row> drops,
+                                                           const int64_t                              destroyed,
+                                                           const int64_t                              unbound_destroyed,
+                                                           const int64_t                              bytes_reclaimed,
+                                                           optional<string>                           memo,
+                                                           optional<name>                             to_notify)
+{
+   const dropssystem::epoch::epoch_table _epoch("epoch.drops"_n, "epoch.drops"_n.value);
+   dropssystem::epoch::state_table       _state("epoch.drops"_n, "epoch.drops"_n.value);
+
+   // Retrieve the current epoch being used (current - 1)
+   auto     state          = _state.get();
+   uint64_t epoch_height   = dropssystem::epoch::derive_epoch(state.genesis, state.duration);
+   uint64_t epoch_previous = epoch_height - 1;
+
+   // Derive the start time of current epoch, all destroyed drops must have been created before this
+   const block_timestamp valid_before =
+      dropssystem::epoch::derive_epoch_start(state.genesis, state.duration, epoch_height);
+
+   // Load the usable/previous epoch from the table
+   auto epoch = _epoch.find(epoch_previous);
+
+   // Ensure the current epoch has been revealed
+   check(epoch->seed != checksum256{}, "Waiting for the previous epoch to be revealed by oracles.");
+
+   // The mining difficult (number of leading zeros)
+   uint32_t difficulty = 2;
+
+   // The amount to issue per Drop destroyed (in units)
+   uint64_t amount = 10000;
+
+   // Compute the hash for the provided drop(s) using the previous epoch revealed seed
+   for (auto itr = begin(drops); itr != end(drops); ++itr) {
+      check(itr->created < valid_before,
+            "An included Drop was created (" + std::to_string(itr->created.to_time_point().sec_since_epoch()) +
+               ") after the start (" + std::to_string(valid_before.to_time_point().sec_since_epoch()) +
+               ") of the valid epoch (" + std::to_string(epoch_previous) + ").");
+
+      const checksum256 hash = dropssystem::epoch::hashdrop(epoch->seed, itr->seed);
+
+      auto   hash_array  = hash.extract_as_byte_array();
+      string hash_result = dropssystem::epoch::hex_to_str(hash_array.data(), hash_array.size());
+
+      // Count the leading zeros of the hex value
+      auto zeros = dropssystem::epoch::clzhex(hash_result);
+
+      check(zeros >= difficulty, "Hash (" + hash_result + ") for provided drop (" + std::to_string(itr->seed) +
+                                    ")  does not meet the difficulty requirement of " + std::to_string(difficulty) +
+                                    " (" + std::to_string(zeros) + ").");
+   }
+
+   symbol  token_symbol = symbol{"DEMO", 4};
+   int64_t total        = drops.size() * amount;
+   asset   quantity     = asset{total, token_symbol};
+
+   stats statstable(get_self(), token_symbol.code().raw());
+   auto  existing = statstable.find(token_symbol.code().raw());
+   check(existing != statstable.end(), "token with symbol does not exist, create token before mint");
+   const auto& st = *existing;
+
+   statstable.modify(st, get_self(), [&](auto& s) { s.supply += quantity; });
+
+   add_balance(owner, quantity, get_self());
+
+   token::logmint_action logmint{get_self(), {get_self(), "active"_n}};
+   logmint.send(owner, quantity);
+}
+
+[[eosio::action]] void token::logmint(const name owner, const asset minted)
+{
+   require_auth(get_self());
+   if (owner != get_self()) {
+      require_recipient(owner);
+   }
+}
+
 void token::issue(const name& to, const asset& quantity, const string& memo)
 {
    auto sym = quantity.symbol;

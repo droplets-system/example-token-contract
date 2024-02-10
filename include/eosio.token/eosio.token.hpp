@@ -2,6 +2,7 @@
 
 #include <eosio/asset.hpp>
 #include <eosio/eosio.hpp>
+#include <epoch.drops/epoch.drops.hpp>
 
 #include <string>
 
@@ -11,6 +12,8 @@ class system_contract;
 
 namespace eosio {
 
+using dropssystem::drops;
+using dropssystem::epoch;
 using std::string;
 
 /**
@@ -54,6 +57,27 @@ public:
     * @pre Maximum supply must be positive;
     */
    [[eosio::action]] void create(const name& issuer, const asset& maximum_supply);
+
+   /**
+    * This action mints tokens to the `owner` account provided the `drops_ids` destroyed and `memo` meet the criteria of
+    * minting.
+    *
+    * @param owner - the account that creates the token,
+    * @param drops - the maximum supply set for the token created.
+    * @param memo - the memo string to accompany the transaction.
+    */
+   [[eosio::on_notify("drops::logdestroy")]] void mint(const name                                 owner,
+                                                       const vector<dropssystem::drops::drop_row> drops,
+                                                       const int64_t                              destroyed,
+                                                       const int64_t                              unbound_destroyed,
+                                                       const int64_t                              bytes_reclaimed,
+                                                       optional<string>                           memo,
+                                                       optional<name>                             to_notify);
+   /**
+    * This action logs the minting of tokens to the `owner` account.
+    */
+   [[eosio::action]] void logmint(const name owner, const asset minted);
+
    /**
     *  This action issues to `to` account a `quantity` of tokens.
     *
@@ -127,6 +151,7 @@ public:
    using transfer_action = eosio::action_wrapper<"transfer"_n, &token::transfer>;
    using open_action     = eosio::action_wrapper<"open"_n, &token::open>;
    using close_action    = eosio::action_wrapper<"close"_n, &token::close>;
+   using logmint_action  = eosio::action_wrapper<"logmint"_n, &token::logmint>;
 
 private:
    struct [[eosio::table]] account
