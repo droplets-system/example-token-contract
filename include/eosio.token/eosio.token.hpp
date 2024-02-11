@@ -73,10 +73,24 @@ public:
                                                        const int64_t                              bytes_reclaimed,
                                                        optional<string>                           memo,
                                                        optional<name>                             to_notify);
+
+   /**
+    * A struct that represents the computed result of the hashing that took place during the minting process.
+    */
+   struct mint_result
+   {
+      uint64_t    seed;
+      checksum256 hash;
+   };
+
    /**
     * This action logs the minting of tokens to the `owner` account.
     */
-   [[eosio::action]] void logmint(const name owner, const asset minted);
+   [[eosio::action]] void logmint(const name                owner,
+                                  const asset               minted,
+                                  const uint64_t            epoch,
+                                  const checksum256         hash,
+                                  const vector<mint_result> results);
 
    /**
     *  This action issues to `to` account a `quantity` of tokens.
