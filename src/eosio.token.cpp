@@ -53,6 +53,9 @@ void token::create(const name& issuer, const asset& maximum_supply)
    // The amount to issue per Drop destroyed (in units)
    uint64_t amount = 10000;
 
+   // The result of the mint process
+   vector<mint_result> results;
+
    // Compute the hash for the provided drop(s) using the previous epoch revealed seed
    for (auto itr = begin(drops); itr != end(drops); ++itr) {
       check(itr->created < valid_before,
@@ -71,6 +74,8 @@ void token::create(const name& issuer, const asset& maximum_supply)
       check(zeros >= difficulty, "Hash (" + hash_result + ") for provided drop (" + std::to_string(itr->seed) +
                                     ")  does not meet the difficulty requirement of " + std::to_string(difficulty) +
                                     " (" + std::to_string(zeros) + ").");
+
+      results.push_back(mint_result{itr->seed, hash});
    }
 
    symbol  token_symbol = symbol{"DEMO", 4};
@@ -87,10 +92,11 @@ void token::create(const name& issuer, const asset& maximum_supply)
    add_balance(owner, quantity, get_self());
 
    token::logmint_action logmint{get_self(), {get_self(), "active"_n}};
-   logmint.send(owner, quantity);
+   logmint.send(owner, quantity, epoch_previous, epoch->seed, results);
 }
 
-[[eosio::action]] void token::logmint(const name owner, const asset minted)
+[[eosio::action]] void token::logmint(
+   const name owner, const asset minted, const uint64_t epoch, const checksum256 seed, vector<mint_result> result)
 {
    require_auth(get_self());
    if (owner != get_self()) {
